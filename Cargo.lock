@@ -347,6 +347,8 @@ name = "vpn-client"
 version = "0.1.0"
 dependencies = [
  "defguard_wireguard_rs",
+ "log",
+ "x25519-dalek",
 ]
 
 [[package]]
