@@ -164,6 +164,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             println!("Client is running — handshaking with server...");
             filelog::write_line("vpn-client.log", &format!("Client connected on {ifname}"));
+            if let Some(url) = cfg.welcome_url.as_ref() {
+                if cfg!(target_os = "windows") {
+                    let _ = std::process::Command::new("powershell").args(["-Command", &format!("Start-Process '{}'", url)]).output();
+                } else {
+                    let _ = std::process::Command::new("xdg-open").arg(url).output();
+                }
+            }
             println!("Press Ctrl+C to stop\n");
             while running.load(Ordering::SeqCst) {
                 thread::sleep(Duration::from_secs(5));
