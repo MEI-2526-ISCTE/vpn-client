@@ -1,6 +1,4 @@
 use std::{
-    net::SocketAddr,
-    str::FromStr,
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
     thread,
@@ -94,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let mut cfg2 = cfg.clone();
             cfg2.client_private_key_b64 = Some(client_private_key_b64.to_string());
-            let mut config = build_interface_config(&cfg2, &ifname)?;
+            let config = build_interface_config(&cfg2, &ifname)?;
             println!("Creating interface {ifname} and connecting...");
             let wgapi = WGApi::<defguard_wireguard_rs::Kernel>::new(ifname.clone())?;
             wgapi.create_interface()?;
@@ -108,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if cfg.kill_switch { kill_switch::apply_kill_switch(&ifname); }
             let original = if !cfg.split_tunnel { route::snapshot_default() } else { None };
-            let dns_snap = if !cfg.split_tunnel && !cfg!(target_os = "windows") { Some(dns::snapshot_dns()) } else { None };
+            let _dns_snap = if !cfg.split_tunnel && !cfg!(target_os = "windows") { Some(dns::snapshot_dns()) } else { None };
             if !cfg.split_tunnel {
                 if let Some((gw, dev)) = original.as_ref() {
                     let ep_ip = cfg.server_endpoint.split(':').next().unwrap_or("127.0.0.1");
@@ -150,7 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 #[cfg(not(target_os = "windows"))]
                 {
-                    if let Some(ref snap) = dns_snap { dns::restore_dns(snap); }
+                    if let Some(ref snap) = _dns_snap { dns::restore_dns(snap); }
                 }
                 return Err("Connectivity failed — restored network".into());
             }
@@ -188,7 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             #[cfg(not(target_os = "windows"))]
             {
-                if let Some(ref snap) = dns_snap { dns::restore_dns(snap); }
+                if let Some(ref snap) = _dns_snap { dns::restore_dns(snap); }
             }
             println!("Client stopped.");
             filelog::write_line("vpn-client.log", &format!("Client stopped on {ifname}"));
