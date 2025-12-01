@@ -1,22 +1,77 @@
-name: Rust
+name: Release Build and Publish
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v1.0.0)"
+        required: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build (release)
+        run: cargo build --release
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          BIN_NAME=vpn-client
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            ART_PATH="target/release/${BIN_NAME}.exe"
+            OUT="vpn-client-windows-x86_64.exe"
+          else
+            ART_PATH="target/release/${BIN_NAME}"
+            OUT="vpn-client-linux-x86_64"
+          fi
+          cp "$ART_PATH" "$OUT"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpn-client-${{ matrix.os }}
+          path: |
+            vpn-client-windows-x86_64.exe
+            vpn-client-linux-x86_64
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vpn-client-*
+          merge-multiple: true
+      - name: Determine tag
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: ${{ steps.vars.outputs.tag }}
+          draft: false
+          prerelease: false
+          files: |
+            vpn-client-windows-x86_64.exe
+            vpn-client-linux-x86_64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
