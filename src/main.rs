@@ -12,6 +12,8 @@ mod config;
 use config::{load_client_config, ensure_client_keys};
 use clap::{Parser, Subcommand};
 mod kill_switch;
+mod filelog;
+mod route;
 use defguard_wireguard_rs::{
     host::Peer, key::Key, net::IpAddrMask, InterfaceConfiguration, WGApi, WireguardInterfaceApi,
 };
@@ -112,6 +114,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 wgapi.configure_interface(&config)?;
             }
             if cfg.kill_switch { kill_switch::apply_kill_switch(&ifname); }
+            if !cfg.split_tunnel {
+                let ep_ip = cfg.server_endpoint.split(':').next().unwrap_or("127.0.0.1");
+                route::ensure_full_tunnel(&ifname, ep_ip);
+            }
             let start = std::time::Instant::now();
             let timeout = std::time::Duration::from_secs(20);
             loop {
@@ -123,6 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if ok { break; }
                 }
                 if start.elapsed() >= timeout {
+                    filelog::write_line("vpn-client.log", &format!("Handshake timeout for {ifname}"));
                     let _ = std::process::Command::new("ip").args(["link", "set", &ifname, "down"]).output();
                     wgapi.remove_interface()?;
                     return Err("Handshake timeout — server unreachable".into());
@@ -130,17 +137,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 thread::sleep(Duration::from_secs(1));
             }
             println!("Client is running — handshaking with server...");
+            filelog::write_line("vpn-client.log", &format!("Client connected on {ifname}"));
             println!("Press Ctrl+C to stop\n");
             while running.load(Ordering::SeqCst) {
                 thread::sleep(Duration::from_secs(5));
                 if let Ok(data) = wgapi.read_interface_data() {
                     for (_, p) in &data.peers {
-                        if p.last_handshake.is_some() { println!("CONNECTED | {} KB sent | {} KB recv", p.tx_bytes / 1024, p.rx_bytes / 1024); } else { println!("Still waiting for handshake..."); }
+                        if p.last_handshake.is_some() { let msg = format!("CONNECTED | {} KB sent | {} KB recv", p.tx_bytes / 1024, p.rx_bytes / 1024); println!("{}", msg); filelog::write_line("vpn-client.log", &msg); } else { println!("Still waiting for handshake..."); }
                     }
                 }
             }
             drop(wgapi);
             println!("Client stopped.");
+            filelog::write_line("vpn-client.log", &format!("Client stopped on {ifname}"));
         }
         Cmd::Disconnect => {
             let cfg = load_client_config(cfg_path.clone())?;
