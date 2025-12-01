@@ -164,11 +164,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             println!("Client is running — handshaking with server...");
             filelog::write_line("vpn-client.log", &format!("Client connected on {ifname}"));
-            if let Some(url) = cfg.welcome_url.as_ref() {
+            {
+                let host = cfg.server_endpoint.split(':').next().unwrap_or("127.0.0.1");
+                let target = cfg.welcome_url.clone().unwrap_or_else(|| format!("http://{}:8080/", host));
                 if cfg!(target_os = "windows") {
-                    let _ = std::process::Command::new("powershell").args(["-Command", &format!("Start-Process '{}'", url)]).output();
+                    let _ = std::process::Command::new("powershell").args(["-Command", &format!("Start-Process '{}'", target)]).output();
+                } else if cfg!(target_os = "macos") {
+                    let _ = std::process::Command::new("open").arg(&target).output();
                 } else {
-                    let _ = std::process::Command::new("xdg-open").arg(url).output();
+                    let _ = std::process::Command::new("xdg-open").arg(&target).output();
                 }
             }
             println!("Press Ctrl+C to stop\n");
