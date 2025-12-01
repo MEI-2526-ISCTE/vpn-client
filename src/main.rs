@@ -8,16 +8,14 @@ use std::{
 };
 
 use base64::{engine::general_purpose, Engine as _};
-mod config;
-use config::{load_client_config, ensure_client_keys};
+use vpn_client::config::{load_client_config, ensure_client_keys};
 use clap::{Parser, Subcommand};
 mod kill_switch;
 mod filelog;
 mod route;
 mod dns;
-use defguard_wireguard_rs::{
-    host::Peer, key::Key, net::IpAddrMask, InterfaceConfiguration, WGApi, WireguardInterfaceApi,
-};
+use defguard_wireguard_rs::{WGApi, WireguardInterfaceApi};
+use vpn_client::build_interface_config;
 
 #[derive(Parser)]
 #[command(name = "vpn-client")]
@@ -94,15 +92,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            let server_public_key_b64 = cfg.server_public_key_b64.clone();
-            let server_pubkey_bytes = general_purpose::STANDARD.decode(server_public_key_b64)?;
-            if server_pubkey_bytes.len() != 32 { return Err("Server public key must decode to exactly 32 bytes".into()); }
-            let server_pubkey = Key::new(server_pubkey_bytes.try_into().unwrap());
-            let mut peer = Peer::new(server_pubkey);
-            peer.endpoint = Some(cfg.server_endpoint.parse::<SocketAddr>()?);
-            peer.persistent_keepalive_interval = Some(cfg.keepalive_secs);
-            if cfg.split_tunnel { peer.allowed_ips.push(IpAddrMask::from_str("10.8.0.0/24")?); } else { peer.allowed_ips.push(IpAddrMask::from_str("0.0.0.0/0")?); }
-            let config = InterfaceConfiguration { name: ifname.clone(), prvkey: client_private_key_b64.to_string(), addresses: vec![cfg.address_cidr.parse()?], port: 0, peers: vec![peer], mtu: None };
+            let mut cfg2 = cfg.clone();
+            cfg2.client_private_key_b64 = Some(client_private_key_b64.to_string());
+            let mut config = build_interface_config(&cfg2, &ifname)?;
             println!("Creating interface {ifname} and connecting...");
             let wgapi = WGApi::<defguard_wireguard_rs::Kernel>::new(ifname.clone())?;
             wgapi.create_interface()?;

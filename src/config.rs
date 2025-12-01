@@ -33,6 +33,9 @@ impl Default for ClientConfig {
     }
 }
 
+/**
+ * @brief Load client configuration from `client.toml`, creating defaults when missing.
+ */
 pub fn load_client_config(path: Option<PathBuf>) -> Result<ClientConfig, Box<dyn std::error::Error>> {
     let p = path.unwrap_or_else(|| PathBuf::from("client.toml"));
     if !p.exists() {
@@ -59,6 +62,9 @@ mod tests {
     }
 }
 
+/**
+ * @brief Ensure client private key exists; if not, generate and persist into `client.toml`.
+ */
 pub fn ensure_client_keys(mut cfg: ClientConfig, path: Option<PathBuf>) -> Result<ClientConfig, Box<dyn std::error::Error>> {
     if cfg.client_private_key_b64.is_some() {
         return Ok(cfg);

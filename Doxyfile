@@ -1,0 +1,10 @@
+PROJECT_NAME           = "vpn-client"
+INPUT                  = src README.md
+FILE_PATTERNS          = *.rs
+RECURSIVE              = YES
+EXTRACT_ALL            = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+EXTENSION_MAPPING      = rs=C++
+QUIET                  = YES
+JAVADOC_AUTOBRIEF      = YES
