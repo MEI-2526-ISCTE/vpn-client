@@ -1,9 +1,0 @@
-interface_name = "wg-client"
-address_cidr = "10.8.0.2/32"
-server_endpoint = "108.61.175.192:51820"
-server_public_key_b64 = "cnWamw+Mu3UUVOYlnxA3OoPj4tAxQyKEvOuhwWjc9Gs="
-keepalive_secs = 25
-split_tunnel = false
-kill_switch = false
-client_private_key_b64 = "WQfCsuQOVdgC+5towVexKaZYNcDGAM0FricVHSzECWc="
-enroll_url = "http://108.61.175.192:8080/enroll"
