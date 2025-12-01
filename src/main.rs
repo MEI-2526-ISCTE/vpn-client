@@ -14,6 +14,7 @@ use clap::{Parser, Subcommand};
 mod kill_switch;
 mod filelog;
 mod route;
+mod dns;
 use defguard_wireguard_rs::{
     host::Peer, key::Key, net::IpAddrMask, InterfaceConfiguration, WGApi, WireguardInterfaceApi,
 };
@@ -114,9 +115,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 wgapi.configure_interface(&config)?;
             }
             if cfg.kill_switch { kill_switch::apply_kill_switch(&ifname); }
+            let original = if !cfg.split_tunnel { route::snapshot_default() } else { None };
+            let dns_snap = if !cfg.split_tunnel { Some(dns::snapshot_dns()) } else { None };
             if !cfg.split_tunnel {
-                let ep_ip = cfg.server_endpoint.split(':').next().unwrap_or("127.0.0.1");
-                route::ensure_full_tunnel(&ifname, ep_ip);
+                if let Some((gw, dev)) = original.as_ref() {
+                    let ep_ip = cfg.server_endpoint.split(':').next().unwrap_or("127.0.0.1");
+                    route::host_route_to_endpoint(ep_ip, gw, dev);
+                }
+                dns::apply_full_tunnel_dns(&ifname);
             }
             let start = std::time::Instant::now();
             let timeout = std::time::Duration::from_secs(20);
@@ -136,6 +142,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 thread::sleep(Duration::from_secs(1));
             }
+            // Connectivity probe over raw IP (no DNS)
+            let probe = std::net::TcpStream::connect_timeout(
+                &"1.1.1.1:443".parse::<std::net::SocketAddr>().unwrap(),
+                std::time::Duration::from_secs(3),
+            );
+            if probe.is_err() {
+                filelog::write_line("vpn-client.log", "Connectivity probe failed after handshake — tearing down");
+                let _ = std::process::Command::new("ip").args(["link", "set", &ifname, "down"]).output();
+                wgapi.remove_interface()?;
+                if cfg.kill_switch { kill_switch::revert_kill_switch(&ifname); }
+                #[cfg(target_os = "windows")]
+                {
+                    dns::restore_dns(&ifname);
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    if let Some(ref snap) = dns_snap { dns::restore_dns(snap); }
+                }
+                return Err("Connectivity failed — restored network".into());
+            }
             println!("Client is running — handshaking with server...");
             filelog::write_line("vpn-client.log", &format!("Client connected on {ifname}"));
             println!("Press Ctrl+C to stop\n");
@@ -148,6 +174,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             drop(wgapi);
+            let _ = std::process::Command::new("ip").args(["link", "set", &ifname, "down"]).output();
+            let wgapi = WGApi::<defguard_wireguard_rs::Kernel>::new(ifname.clone())?;
+            let _ = wgapi.remove_interface();
+            if cfg.kill_switch { kill_switch::revert_kill_switch(&ifname); }
+            if !cfg.split_tunnel { route::restore_default(&original); }
+            #[cfg(target_os = "windows")]
+            {
+                dns::restore_dns(&ifname);
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                if let Some(ref snap) = dns_snap { dns::restore_dns(snap); }
+            }
             println!("Client stopped.");
             filelog::write_line("vpn-client.log", &format!("Client stopped on {ifname}"));
         }
