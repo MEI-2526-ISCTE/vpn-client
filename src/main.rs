@@ -116,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if cfg.kill_switch { kill_switch::apply_kill_switch(&ifname); }
             let original = if !cfg.split_tunnel { route::snapshot_default() } else { None };
-            let dns_snap = if !cfg.split_tunnel { Some(dns::snapshot_dns()) } else { None };
+            let dns_snap = if !cfg.split_tunnel && !cfg!(target_os = "windows") { Some(dns::snapshot_dns()) } else { None };
             if !cfg.split_tunnel {
                 if let Some((gw, dev)) = original.as_ref() {
                     let ep_ip = cfg.server_endpoint.split(':').next().unwrap_or("127.0.0.1");
