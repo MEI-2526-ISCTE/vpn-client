@@ -1,7 +1,7 @@
 interface_name = "wg-client"
 address_cidr = "10.8.0.2/32"
-server_endpoint = "127.0.0.1:51820"
-server_public_key_b64 = "IeVUSnq8nYfHTbWwX9/kWp3B+1kxk8vQt8rFsCDOXVs="
+server_endpoint = "108.61.175.192:51820"
+server_public_key_b64 = "1EeHbLhAAA4NqPSQZgCB5w+4Ig1/ac/rn7QhVAujDXw="
 keepalive_secs = 25
 split_tunnel = false
 kill_switch = false

@@ -56,6 +56,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let cfg = ensure_client_keys(cfg, cfg_path.clone())?;
             let ifname = ifname.unwrap_or_else(|| cfg.interface_name.clone());
             let client_private_key_b64 = cfg.client_private_key_b64.clone().unwrap();
+            if let Some(url) = &cfg.enroll_url {
+                // POST client public key to server enrollment endpoint
+                let sk_bytes = general_purpose::STANDARD.decode(&client_private_key_b64)?;
+                let arr: [u8;32] = sk_bytes.try_into().map_err(|_| "Invalid key length")?;
+                let secret = x25519_dalek::StaticSecret::from(arr);
+                let public = x25519_dalek::PublicKey::from(&secret);
+                let pub_b64 = general_purpose::STANDARD.encode(public.as_bytes());
+                if url.starts_with("http://") {
+                    // naive HTTP client
+                    let (host_port, path) = {
+                        let s = url.trim_start_matches("http://");
+                        let pos = s.find('/').unwrap_or(s.len());
+                        let hp = &s[..pos];
+                        let p = &s[pos..];
+                        (hp.to_string(), if p.is_empty() { "/".to_string() } else { p.to_string() })
+                    };
+                    let mut parts = host_port.split(':');
+                    let host = parts.next().unwrap_or("127.0.0.1");
+                    let port: u16 = parts.next().unwrap_or("8080").parse().unwrap_or(8080);
+                    let mut stream = std::net::TcpStream::connect((host, port))?;
+                    let body = pub_b64.clone();
+                    let req = format!(
+                        "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        path, host, body.len(), body
+                    );
+                    use std::io::Write;
+                    stream.write_all(req.as_bytes())?;
+                    use std::io::Read;
+                    let mut resp = String::new();
+                    stream.read_to_string(&mut resp)?;
+                    if !resp.starts_with("HTTP/1.1 200") && !resp.starts_with("HTTP/1.0 200") {
+                        return Err("Enrollment failed".into());
+                    }
+                }
+            }
             let server_public_key_b64 = cfg.server_public_key_b64.clone();
             let server_pubkey_bytes = general_purpose::STANDARD.decode(server_public_key_b64)?;
             if server_pubkey_bytes.len() != 32 { return Err("Server public key must decode to exactly 32 bytes".into()); }
@@ -77,6 +112,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 wgapi.configure_interface(&config)?;
             }
             if cfg.kill_switch { kill_switch::apply_kill_switch(&ifname); }
+            let start = std::time::Instant::now();
+            let timeout = std::time::Duration::from_secs(20);
+            loop {
+                if let Ok(data) = wgapi.read_interface_data() {
+                    let mut ok = false;
+                    for (_, p) in &data.peers {
+                        if p.last_handshake.is_some() { ok = true; break; }
+                    }
+                    if ok { break; }
+                }
+                if start.elapsed() >= timeout {
+                    let _ = std::process::Command::new("ip").args(["link", "set", &ifname, "down"]).output();
+                    wgapi.remove_interface()?;
+                    return Err("Handshake timeout — server unreachable".into());
+                }
+                thread::sleep(Duration::from_secs(1));
+            }
             println!("Client is running — handshaking with server...");
             println!("Press Ctrl+C to stop\n");
             while running.load(Ordering::SeqCst) {

@@ -12,6 +12,7 @@ pub struct ClientConfig {
     pub split_tunnel: bool,
     pub kill_switch: bool,
     pub client_private_key_b64: Option<String>,
+    pub enroll_url: Option<String>,
 }
 
 impl Default for ClientConfig {
@@ -25,6 +26,7 @@ impl Default for ClientConfig {
             split_tunnel: false,
             kill_switch: false,
             client_private_key_b64: None,
+            enroll_url: Some("http://127.0.0.1:8080/enroll".into()),
         }
     }
 }
